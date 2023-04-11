@@ -378,7 +378,7 @@ The deprecated features are shown in the following table:
 | Container label `containerd.io/restart.logpath`                                  | containerd v1.5     | containerd v2.0 ✅         | Use `containerd.io/restart.loguri` label |
 | `cri-containerd-*.tar.gz` release bundles                                        | containerd v1.6     | containerd v2.0            | Use `containerd-*.tar.gz` bundles        |
 | Pulling Schema 1 images (`application/vnd.docker.distribution.manifest.v1+json`) | containerd v1.7     | containerd v2.0            | Use Schema 2 or OCI images               |
-| CRI `v1alpha2`                                                                   | containerd v1.7     | containerd v2.0            | Use CRI `v1`                             |
+| CRI `v1alpha2`                                                                   | containerd v1.7     | containerd v2.0 ✅         | Use CRI `v1`                             |
 
 ### Deprecated config properties
 The deprecated properties in [`config.toml`](./docs/cri/config.md) are shown in the following table:
@@ -391,7 +391,7 @@ The deprecated properties in [`config.toml`](./docs/cri/config.md) are shown in 
 |`[plugins."io.containerd.grpc.v1.cri".containerd]`                    | `default_runtime`            | containerd v1.3     | containerd v2.0 ✅         | Use `default_runtime_name`                      |
 |`[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.*]`         | `runtime_engine`             | containerd v1.3     | containerd v2.0 ✅         | Use runtime v2                                  |
 |`[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.*]`         | `runtime_root`               | containerd v1.3     | containerd v2.0 ✅         | Use `options.Root`                              |
-|`[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.*.options]` | `CriuPath`                   | containerd v1.7     | containerd v2.0            | Set `$PATH` to the `criu` binary                |
+|`[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.*.options]` | `CriuPath`                   | containerd v1.7     | containerd v2.0 ✅         | Set `$PATH` to the `criu` binary                |
 |`[plugins."io.containerd.grpc.v1.cri".registry]`                      | `auths`                      | containerd v1.3     | containerd v2.0            | Use [`ImagePullSecrets`](https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/). See also [#8228](https://github.com/containerd/containerd/issues/8228). |
 |`[plugins."io.containerd.grpc.v1.cri".registry]`                      | `configs`                    | containerd v1.5     | containerd v2.0            | Use [`config_path`](./docs/hosts.md)            |
 |`[plugins."io.containerd.grpc.v1.cri".registry]`                      | `mirrors`                    | containerd v1.5     | containerd v2.0            | Use [`config_path`](./docs/hosts.md)            |

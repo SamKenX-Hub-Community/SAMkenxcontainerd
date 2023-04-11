@@ -107,7 +107,7 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 
 	// Prepare container image snapshot. For container, the image should have
 	// been pulled before creating the container, so do not ensure the image.
-	image, err := c.localResolve(config.GetImage().GetImage())
+	image, err := c.LocalResolve(config.GetImage().GetImage())
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve image %q: %w", config.GetImage().GetImage(), err)
 	}
@@ -156,9 +156,6 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 		log.G(ctx).Debugf("Ignoring volumes defined in image %v because IgnoreImageDefinedVolumes is set", image.ID)
 	}
 
-	// Generate container mounts.
-	mounts := c.containerMounts(sandboxID, config)
-
 	ociRuntime, err := c.getSandboxRuntime(sandboxConfig, sandbox.Metadata.RuntimeHandler)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sandbox runtime: %w", err)
@@ -181,7 +178,7 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 		config,
 		sandboxConfig,
 		&image.ImageSpec.Config,
-		append(mounts, volumeMounts...),
+		volumeMounts,
 		ociRuntime,
 	)
 	if err != nil {
@@ -213,7 +210,7 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 
 	// Set snapshotter before any other options.
 	opts := []containerd.NewContainerOpts{
-		containerd.WithSnapshotter(c.runtimeSnapshotter(ctx, ociRuntime)),
+		containerd.WithSnapshotter(c.RuntimeSnapshotter(ctx, ociRuntime)),
 		// Prepare container rootfs. This is always writeable even if
 		// the container wants a readonly rootfs since we want to give
 		// the runtime (runc) a chance to modify (e.g. to create mount
@@ -400,17 +397,6 @@ func (c *criService) runtimeSpec(id string, platform platforms.Platform, baseSpe
 	return spec, nil
 }
 
-// Overrides the default snapshotter if Snapshotter is set for this runtime.
-// See https://github.com/containerd/containerd/issues/6657
-func (c *criService) runtimeSnapshotter(ctx context.Context, ociRuntime criconfig.Runtime) string {
-	if ociRuntime.Snapshotter == "" {
-		return c.config.ContainerdConfig.Snapshotter
-	}
-
-	log.G(ctx).Debugf("Set snapshotter for runtime %s to %s", ociRuntime.Type, ociRuntime.Snapshotter)
-	return ociRuntime.Snapshotter
-}
-
 const (
 	// relativeRootfsPath is the rootfs path relative to bundle path.
 	relativeRootfsPath = "rootfs"
@@ -445,6 +431,10 @@ func (c *criService) buildContainerSpec(
 
 	switch {
 	case isLinux:
+		// Generate container mounts.
+		// No mounts are passed for other platforms.
+		linuxMounts := c.linuxContainerMounts(sandboxID, config)
+
 		specOpts, err = c.buildLinuxSpec(
 			id,
 			sandboxID,
@@ -455,7 +445,7 @@ func (c *criService) buildContainerSpec(
 			config,
 			sandboxConfig,
 			imageConfig,
-			extraMounts,
+			append(linuxMounts, extraMounts...),
 			ociRuntime,
 		)
 	case isWindows:
@@ -873,4 +863,61 @@ func (c *criService) buildDarwinSpec(
 	)
 
 	return specOpts, nil
+}
+
+// containerMounts sets up necessary container system file mounts
+// including /dev/shm, /etc/hosts and /etc/resolv.conf.
+func (c *criService) linuxContainerMounts(sandboxID string, config *runtime.ContainerConfig) []*runtime.Mount {
+	var mounts []*runtime.Mount
+	securityContext := config.GetLinux().GetSecurityContext()
+	if !isInCRIMounts(etcHostname, config.GetMounts()) {
+		// /etc/hostname is added since 1.1.6, 1.2.4 and 1.3.
+		// For in-place upgrade, the old sandbox doesn't have the hostname file,
+		// do not mount this in that case.
+		// TODO(random-liu): Remove the check and always mount this when
+		// containerd 1.1 and 1.2 are deprecated.
+		hostpath := c.getSandboxHostname(sandboxID)
+		if _, err := c.os.Stat(hostpath); err == nil {
+			mounts = append(mounts, &runtime.Mount{
+				ContainerPath:  etcHostname,
+				HostPath:       hostpath,
+				Readonly:       securityContext.GetReadonlyRootfs(),
+				SelinuxRelabel: true,
+			})
+		}
+	}
+
+	if !isInCRIMounts(etcHosts, config.GetMounts()) {
+		mounts = append(mounts, &runtime.Mount{
+			ContainerPath:  etcHosts,
+			HostPath:       c.getSandboxHosts(sandboxID),
+			Readonly:       securityContext.GetReadonlyRootfs(),
+			SelinuxRelabel: true,
+		})
+	}
+
+	// Mount sandbox resolv.config.
+	// TODO: Need to figure out whether we should always mount it as read-only
+	if !isInCRIMounts(resolvConfPath, config.GetMounts()) {
+		mounts = append(mounts, &runtime.Mount{
+			ContainerPath:  resolvConfPath,
+			HostPath:       c.getResolvPath(sandboxID),
+			Readonly:       securityContext.GetReadonlyRootfs(),
+			SelinuxRelabel: true,
+		})
+	}
+
+	if !isInCRIMounts(devShm, config.GetMounts()) {
+		sandboxDevShm := c.getSandboxDevShm(sandboxID)
+		if securityContext.GetNamespaceOptions().GetIpc() == runtime.NamespaceMode_NODE {
+			sandboxDevShm = devShm
+		}
+		mounts = append(mounts, &runtime.Mount{
+			ContainerPath:  devShm,
+			HostPath:       sandboxDevShm,
+			Readonly:       false,
+			SelinuxRelabel: sandboxDevShm != devShm,
+		})
+	}
+	return mounts
 }

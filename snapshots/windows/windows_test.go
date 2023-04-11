@@ -1,3 +1,6 @@
+//go:build windows
+// +build windows
+
 /*
    Copyright The containerd Authors.
 
@@ -14,39 +17,27 @@
    limitations under the License.
 */
 
-package util
+package windows
 
 import (
-	"github.com/containerd/containerd/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protoreflect"
+	"context"
+	"testing"
+
+	"github.com/containerd/containerd/pkg/testutil"
+	"github.com/containerd/containerd/snapshots"
+	"github.com/containerd/containerd/snapshots/testsuite"
 )
 
-func AlphaReqToV1Req(
-	alphar protoreflect.ProtoMessage,
-	v1r interface{ Unmarshal(_ []byte) error },
-) error {
-	p, err := proto.Marshal(alphar)
+func newSnapshotter(ctx context.Context, root string) (snapshots.Snapshotter, func() error, error) {
+	snapshotter, err := NewSnapshotter(root)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
-	if err = v1r.Unmarshal(p); err != nil {
-		return err
-	}
-	return nil
+	return snapshotter, func() error { return snapshotter.Close() }, nil
 }
 
-func V1RespToAlphaResp(
-	v1res interface{ Marshal() ([]byte, error) },
-	alphares protoreflect.ProtoMessage,
-) error {
-	p, err := v1res.Marshal()
-	if err != nil {
-		return err
-	}
-
-	if err = proto.Unmarshal(p, alphares); err != nil {
-		return err
-	}
-	return nil
+func TestWindows(t *testing.T) {
+	testutil.RequiresRoot(t)
+	testsuite.SnapshotterSuite(t, "Windows", newSnapshotter)
 }
